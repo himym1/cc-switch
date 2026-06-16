@@ -125,6 +125,7 @@ const VALID_APPS: AppId[] = [
   "opencode",
   "openclaw",
   "hermes",
+  "pi-agent",
 ];
 
 const getInitialApp = (): AppId => {
@@ -190,6 +191,7 @@ function App() {
     opencode: true,
     openclaw: true,
     hermes: true,
+    "pi-agent": true,
   };
 
   const getFirstVisibleApp = (): AppId => {
@@ -200,6 +202,7 @@ function App() {
     if (visibleApps.opencode) return "opencode";
     if (visibleApps.openclaw) return "openclaw";
     if (visibleApps.hermes) return "hermes";
+    if (visibleApps["pi-agent"]) return "pi-agent";
     return "claude"; // fallback
   };
 
@@ -218,7 +221,8 @@ function App() {
       sharedFeatureApp !== "opencode" &&
       sharedFeatureApp !== "openclaw" &&
       sharedFeatureApp !== "gemini" &&
-      sharedFeatureApp !== "hermes"
+      sharedFeatureApp !== "hermes" &&
+      sharedFeatureApp !== "pi-agent"
     ) {
       setCurrentView("providers");
     }

@@ -72,6 +72,7 @@ const createDefaultProviders = (): ProvidersByApp => ({
   opencode: {},
   openclaw: {},
   hermes: {},
+  "pi-agent": {},
 });
 
 const createDefaultCurrent = (): CurrentProviderState => ({
@@ -82,6 +83,7 @@ const createDefaultCurrent = (): CurrentProviderState => ({
   opencode: "",
   openclaw: "",
   hermes: "",
+  "pi-agent": "",
 });
 
 let providers = createDefaultProviders();
@@ -194,6 +196,7 @@ let mcpConfigs: McpConfigState = {
   opencode: {},
   openclaw: {},
   hermes: {},
+  "pi-agent": {},
 };
 
 const cloneProviders = (value: ProvidersByApp) =>
@@ -231,6 +234,7 @@ export const resetProviderState = () => {
           opencode: false,
           openclaw: false,
           hermes: false,
+          "pi-agent": false,
         },
         server: {
           type: "stdio",
@@ -251,6 +255,7 @@ export const resetProviderState = () => {
           opencode: false,
           openclaw: false,
           hermes: false,
+          "pi-agent": false,
         },
         server: {
           type: "http",
@@ -262,6 +267,7 @@ export const resetProviderState = () => {
     opencode: {},
     openclaw: {},
     hermes: {},
+    "pi-agent": {},
   };
 };
 

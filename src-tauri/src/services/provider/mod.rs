@@ -1989,6 +1989,7 @@ impl ProviderService {
             AppType::OpenCode => Self::extract_opencode_common_config(&provider.settings_config),
             AppType::OpenClaw => Self::extract_openclaw_common_config(&provider.settings_config),
             AppType::Hermes => Ok(String::new()), // Hermes doesn't use common config snippets
+            AppType::PiAgent => Self::extract_pi_agent_common_config(&provider.settings_config),
         }
     }
 
@@ -2005,10 +2006,34 @@ impl ProviderService {
             AppType::OpenCode => Self::extract_opencode_common_config(settings_config),
             AppType::OpenClaw => Self::extract_openclaw_common_config(settings_config),
             AppType::Hermes => Ok(String::new()), // Hermes doesn't use common config snippets
+            AppType::PiAgent => Self::extract_pi_agent_common_config(settings_config),
         }
     }
 
     /// Extract common config for Claude (JSON format)
+    /// Extract common config for Pi Coding Agent (JSON format)
+    fn extract_pi_agent_common_config(settings: &Value) -> Result<String, AppError> {
+        let mut config = settings.clone();
+
+        if let Some(models) = config.get_mut("models").and_then(Value::as_object_mut) {
+            if let Some(providers) = models.get_mut("providers").and_then(Value::as_object_mut) {
+                for provider in providers.values_mut() {
+                    if let Some(obj) = provider.as_object_mut() {
+                        obj.remove("apiKey");
+                        obj.remove("headers");
+                    }
+                }
+            }
+        }
+
+        if let Some(settings_obj) = config.get_mut("settings").and_then(Value::as_object_mut) {
+            settings_obj.remove("defaultProvider");
+            settings_obj.remove("defaultModel");
+        }
+
+        serde_json::to_string_pretty(&config).map_err(|e| AppError::JsonSerialize { source: e })
+    }
+
     fn extract_claude_common_config(settings: &Value) -> Result<String, AppError> {
         let mut config = settings.clone();
 
@@ -2393,6 +2418,9 @@ impl ProviderService {
                     ));
                 }
             }
+            AppType::PiAgent => {
+                crate::pi_config::validate_pi_agent_settings(&provider.settings_config)?;
+            }
         }
 
         // Validate and clean UsageScript configuration (common for all app types)
@@ -2597,6 +2625,19 @@ impl ProviderService {
                     .unwrap_or("")
                     .to_string();
 
+                Ok((api_key, base_url))
+            }
+            AppType::PiAgent => {
+                let (base_url, api_key) = crate::pi_config::extract_pi_agent_primary_credentials(
+                    &provider.settings_config,
+                );
+                if api_key.is_empty() {
+                    return Err(AppError::localized(
+                        "provider.pi_agent.api_key.missing",
+                        "缺少 API Key",
+                        "API key is missing",
+                    ));
+                }
                 Ok((api_key, base_url))
             }
         }

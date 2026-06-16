@@ -347,6 +347,10 @@ fn settings_contain_common_config(app_type: &AppType, settings: &Value, snippet:
             }
             _ => false,
         },
+        AppType::PiAgent => match serde_json::from_str::<Value>(trimmed) {
+            Ok(source) if source.is_object() => json_is_subset(settings, &source),
+            _ => false,
+        },
         AppType::OpenCode | AppType::OpenClaw | AppType::Hermes | AppType::ClaudeDesktop => false,
     }
 }
@@ -417,6 +421,13 @@ pub(crate) fn remove_common_config_from_settings(
             }
             Ok(result)
         }
+        AppType::PiAgent => {
+            let source = serde_json::from_str::<Value>(trimmed)
+                .map_err(|e| AppError::Message(format!("Invalid Pi Agent common config: {e}")))?;
+            let mut result = settings.clone();
+            json_deep_remove(&mut result, &source);
+            Ok(result)
+        }
         AppType::OpenCode | AppType::OpenClaw | AppType::Hermes | AppType::ClaudeDesktop => {
             Ok(settings.clone())
         }
@@ -472,6 +483,13 @@ fn apply_common_config_to_settings(
             } else if let Some(obj) = result.as_object_mut() {
                 obj.insert("env".to_string(), source);
             }
+            Ok(result)
+        }
+        AppType::PiAgent => {
+            let source = serde_json::from_str::<Value>(trimmed)
+                .map_err(|e| AppError::Message(format!("Invalid Pi Agent common config: {e}")))?;
+            let mut result = settings.clone();
+            json_deep_merge(&mut result, &source);
             Ok(result)
         }
         AppType::OpenCode | AppType::OpenClaw | AppType::Hermes | AppType::ClaudeDesktop => {
@@ -875,6 +893,13 @@ pub(crate) fn write_live_snapshot(app_type: &AppType, provider: &Provider) -> Re
             crate::hermes_config::set_provider(&provider.id, provider.settings_config.clone())?;
             log::debug!("Hermes provider '{}' written to live config", provider.id);
         }
+        AppType::PiAgent => {
+            crate::pi_config::write_pi_agent_live(&provider.settings_config)?;
+            log::debug!(
+                "Pi Coding Agent provider '{}' written to live config",
+                provider.id
+            );
+        }
     }
     Ok(())
 }
@@ -1124,6 +1149,16 @@ pub fn read_live_settings(app_type: AppType) -> Result<Value, AppError> {
             let config = crate::hermes_config::yaml_to_json(&yaml_config)?;
             Ok(config)
         }
+        AppType::PiAgent => {
+            if !crate::pi_config::live_config_exists() {
+                return Err(AppError::localized(
+                    "pi_agent.config.missing",
+                    "Pi Coding Agent 配置文件不存在",
+                    "Pi Coding Agent configuration file not found",
+                ));
+            }
+            crate::pi_config::read_pi_agent_live_settings()
+        }
     }
 }
 
@@ -1216,6 +1251,16 @@ pub fn import_default_config(state: &AppState, app_type: AppType) -> Result<bool
                 "env": env_obj,
                 "config": config_obj
             })
+        }
+        AppType::PiAgent => {
+            if !crate::pi_config::live_config_exists() {
+                return Err(AppError::localized(
+                    "pi_agent.live.missing",
+                    "Pi Coding Agent 配置文件不存在",
+                    "Pi Coding Agent configuration file is missing",
+                ));
+            }
+            crate::pi_config::read_pi_agent_live_settings()?
         }
         // OpenCode, OpenClaw and Hermes use additive mode and are handled by early return above
         AppType::OpenCode | AppType::OpenClaw | AppType::Hermes => {

@@ -137,6 +137,9 @@ impl McpService {
             AppType::Hermes => {
                 mcp::sync_single_server_to_hermes(&Default::default(), &server.id, &server.server)?;
             }
+            AppType::PiAgent => {
+                log::debug!("Pi Coding Agent does not include built-in MCP, skipping sync");
+            }
         }
         Ok(())
     }
@@ -172,6 +175,9 @@ impl McpService {
             AppType::Hermes => {
                 mcp::remove_server_from_hermes(id)?;
             }
+            AppType::PiAgent => {
+                log::debug!("Pi Coding Agent does not include built-in MCP, skipping remove");
+            }
         }
         Ok(())
     }
@@ -181,7 +187,10 @@ impl McpService {
         let servers = Self::get_all_servers(state)?;
 
         for app in AppType::all() {
-            if matches!(app, AppType::OpenClaw | AppType::ClaudeDesktop) {
+            if matches!(
+                app,
+                AppType::OpenClaw | AppType::ClaudeDesktop | AppType::PiAgent
+            ) {
                 continue;
             }
 

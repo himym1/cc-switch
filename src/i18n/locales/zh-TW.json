@@ -790,7 +790,7 @@
     "officialWebsite": "官方網站",
     "github": "GitHub",
     "oneClickInstall": "一鍵安裝",
-    "oneClickInstallHint": "安裝 Claude Code / Codex / Gemini CLI / OpenCode",
+    "oneClickInstallHint": "安裝 Claude Code / Codex / Gemini CLI / OpenCode / OpenClaw / Hermes / Pi Agent",
     "localEnvCheck": "本地環境檢查",
     "envBadge": {
       "wsl": "WSL",
@@ -839,7 +839,10 @@
       "defaultCostMultiplierRequired": "預設倍率不能為空",
       "defaultCostMultiplierInvalid": "預設倍率格式不正確"
     },
-    "saveFailedGeneric": "儲存失敗，請重試"
+    "saveFailedGeneric": "儲存失敗，請重試",
+    "piAgentConfigDir": "Pi Agent 設定目錄",
+    "piAgentConfigDirDescription": "覆寫 Pi Coding Agent 設定目錄（models.json 和 settings.json）。",
+    "browsePlaceholderPiAgent": "例如：/home/<您的帳號>/.pi/agent"
   },
   "apps": {
     "claude": "Claude",
@@ -850,7 +853,9 @@
     "gemini": "Gemini",
     "opencode": "OpenCode",
     "openclaw": "OpenClaw",
-    "hermes": "Hermes"
+    "hermes": "Hermes",
+    "pi-agent": "Pi Agent",
+    "piAgent": "Pi Agent"
   },
   "sessionManager": {
     "title": "工作階段管理",
@@ -2821,5 +2826,15 @@
     "expiredHint": "請執行 {{tool}} 命令重新整理登入",
     "queryFailed": "查詢失敗",
     "refresh": "重新整理"
+  },
+  "piAgent": {
+    "providerId": "供應商 ID",
+    "providerIdHint": "寫入 ~/.pi/agent 中的 models.providers 與 settings.defaultProvider。",
+    "apiProtocol": "API 協定",
+    "selectProtocol": "選擇 API 協定",
+    "baseUrl": "API 端點",
+    "defaultModel": "預設模型",
+    "defaultModelHint": "同時更新第一個模型項目，方便 Pi 列出並選擇該模型。",
+    "defaultModelRequired": "請填寫 Pi 預設模型"
   }
 }

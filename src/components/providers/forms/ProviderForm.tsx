@@ -48,6 +48,7 @@ import {
 import { OpenCodeFormFields } from "./OpenCodeFormFields";
 import { OpenClawFormFields } from "./OpenClawFormFields";
 import { HermesFormFields } from "./HermesFormFields";
+import { PiAgentFormFields } from "./PiAgentFormFields";
 import type { UniversalProviderPreset } from "@/config/universalProviderPresets";
 import {
   applyTemplateValues,
@@ -111,6 +112,12 @@ import {
   normalizePricingSource,
 } from "./helpers/opencodeFormUtils";
 import { HERMES_DEFAULT_CONFIG } from "./hooks/useHermesFormState";
+import {
+  PI_AGENT_DEFAULT_CONFIG,
+  getPiAgentFormValues,
+  updatePiAgentConfig,
+  type PiAgentFormValues,
+} from "./helpers/piAgentFormUtils";
 import { resolveManagedAccountId } from "@/lib/authBinding";
 import { useOpenClawLiveProviderIds } from "@/hooks/useOpenClaw";
 import { useHermesLiveProviderIds } from "@/hooks/useHermes";
@@ -375,7 +382,9 @@ function ProviderFormFull({
                 ? OPENCLAW_DEFAULT_CONFIG
                 : appId === "hermes"
                   ? HERMES_DEFAULT_CONFIG
-                  : CLAUDE_DEFAULT_CONFIG,
+                  : appId === "pi-agent"
+                    ? PI_AGENT_DEFAULT_CONFIG
+                    : CLAUDE_DEFAULT_CONFIG,
       icon: initialData?.icon ?? "",
       iconColor: initialData?.iconColor ?? "",
     }),
@@ -388,10 +397,26 @@ function ProviderFormFull({
     mode: "onSubmit",
   });
   const { isSubmitting } = form.formState;
+  const watchedSettingsConfig = form.watch("settingsConfig");
+  const piAgentValues = useMemo(
+    () => getPiAgentFormValues(watchedSettingsConfig),
+    [watchedSettingsConfig],
+  );
 
   const handleSettingsConfigChange = useCallback(
     (config: string) => {
       form.setValue("settingsConfig", config);
+    },
+    [form],
+  );
+
+  const handlePiAgentFieldChange = useCallback(
+    (updates: Partial<PiAgentFormValues>) => {
+      const updated = updatePiAgentConfig(
+        form.getValues("settingsConfig"),
+        updates,
+      );
+      form.setValue("settingsConfig", updated);
     },
     [form],
   );
@@ -1157,6 +1182,28 @@ function ProviderFormFull({
           issues.push(
             t("providerForm.apiKeyRequired", {
               defaultValue: "非官方供应商请填写 API Key",
+            }),
+          );
+        }
+      } else if (appId === "pi-agent") {
+        if (!piAgentValues.baseUrl.trim()) {
+          issues.push(
+            t("providerForm.endpointRequired", {
+              defaultValue: "非官方供应商请填写 API 端点",
+            }),
+          );
+        }
+        if (!piAgentValues.apiKey.trim()) {
+          issues.push(
+            t("providerForm.apiKeyRequired", {
+              defaultValue: "非官方供应商请填写 API Key",
+            }),
+          );
+        }
+        if (!piAgentValues.defaultModel.trim()) {
+          issues.push(
+            t("piAgent.defaultModelRequired", {
+              defaultValue: "请填写 Pi 默认模型",
             }),
           );
         }
@@ -2089,6 +2136,29 @@ function ProviderFormFull({
             />
           )}
 
+          {appId === "pi-agent" && (
+            <PiAgentFormFields
+              providerId={piAgentValues.providerId}
+              onProviderIdChange={(providerId) =>
+                handlePiAgentFieldChange({ providerId })
+              }
+              baseUrl={piAgentValues.baseUrl}
+              onBaseUrlChange={(baseUrl) =>
+                handlePiAgentFieldChange({ baseUrl })
+              }
+              apiKey={piAgentValues.apiKey}
+              onApiKeyChange={(apiKey) => handlePiAgentFieldChange({ apiKey })}
+              api={piAgentValues.api}
+              onApiChange={(api) => handlePiAgentFieldChange({ api })}
+              defaultModel={piAgentValues.defaultModel}
+              onDefaultModelChange={(defaultModel) =>
+                handlePiAgentFieldChange({ defaultModel })
+              }
+              category={category}
+              websiteUrl={form.watch("websiteUrl") || ""}
+            />
+          )}
+
           {appId === "opencode" && !isAnyOmoCategory && (
             <OpenCodeFormFields
               npm={opencodeForm.opencodeNpm}
@@ -2261,7 +2331,9 @@ function ProviderFormFull({
               </div>
               {settingsConfigErrorField}
             </>
-          ) : appId === "openclaw" || appId === "hermes" ? (
+          ) : appId === "openclaw" ||
+            appId === "hermes" ||
+            appId === "pi-agent" ? (
             <>
               <div className="space-y-2">
                 <Label htmlFor="settingsConfig">
@@ -2271,13 +2343,15 @@ function ProviderFormFull({
                   value={form.getValues("settingsConfig")}
                   onChange={(config) => form.setValue("settingsConfig", config)}
                   placeholder={
-                    appId === "hermes"
-                      ? `{
+                    appId === "pi-agent"
+                      ? PI_AGENT_DEFAULT_CONFIG
+                      : appId === "hermes"
+                        ? `{
   "name": "my-provider",
   "base_url": "https://api.example.com/v1",
   "api_key": ""
 }`
-                      : `{
+                        : `{
   "baseUrl": "https://api.example.com/v1",
   "apiKey": "your-api-key-here",
   "api": "openai-completions",
@@ -2322,7 +2396,8 @@ function ProviderFormFull({
           {!isAnyOmoCategory &&
             appId !== "opencode" &&
             appId !== "openclaw" &&
-            appId !== "hermes" && (
+            appId !== "hermes" &&
+            appId !== "pi-agent" && (
               <ProviderAdvancedConfig
                 testConfig={testConfig}
                 pricingConfig={pricingConfig}

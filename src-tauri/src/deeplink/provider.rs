@@ -148,6 +148,7 @@ pub(crate) fn build_provider_from_request(
         AppType::OpenCode => build_opencode_settings(request),
         AppType::OpenClaw => build_additive_app_settings(request),
         AppType::Hermes => build_hermes_settings(request),
+        AppType::PiAgent => build_pi_agent_settings(request),
     };
 
     // Build usage script configuration if provided
@@ -390,6 +391,61 @@ requires_openai_auth = true
             "OPENAI_API_KEY": request.api_key,
         },
         "config": config_toml
+    })
+}
+
+/// Build Pi Coding Agent settings configuration.
+fn build_pi_agent_settings(request: &DeepLinkImportRequest) -> serde_json::Value {
+    let provider_id = request
+        .name
+        .as_deref()
+        .unwrap_or("custom")
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_lowercase();
+    let provider_id = if provider_id.is_empty() {
+        "custom".to_string()
+    } else {
+        provider_id
+    };
+
+    let model = request.model.as_deref().unwrap_or("gpt-5.1");
+    let endpoint = get_primary_endpoint(request);
+
+    serde_json::json!({
+        "models": {
+            "providers": {
+                provider_id.clone(): {
+                    "baseUrl": endpoint,
+                    "api": "openai-completions",
+                    "apiKey": request.api_key.clone().unwrap_or_default(),
+                    "authHeader": true,
+                    "models": [
+                        {
+                            "id": model,
+                            "name": model,
+                            "reasoning": true,
+                            "input": ["text"],
+                            "contextWindow": 128000,
+                            "maxTokens": 16384
+                        }
+                    ]
+                }
+            }
+        },
+        "settings": {
+            "defaultProvider": provider_id,
+            "defaultModel": model,
+            "defaultThinkingLevel": "medium"
+        }
     })
 }
 

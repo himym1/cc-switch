@@ -536,6 +536,11 @@ impl SkillService {
                     return Ok(custom.join("skills"));
                 }
             }
+            AppType::PiAgent => {
+                if let Some(custom) = crate::settings::get_pi_agent_override_dir() {
+                    return Ok(custom.join("skills"));
+                }
+            }
         }
 
         // 默认路径：回退到用户主目录下的标准位置
@@ -553,6 +558,7 @@ impl SkillService {
             AppType::OpenCode => home.join(".config").join("opencode").join("skills"),
             AppType::OpenClaw => home.join(".openclaw").join("skills"),
             AppType::Hermes => crate::hermes_config::get_hermes_dir().join("skills"),
+            AppType::PiAgent => crate::pi_config::get_pi_agent_dir().join("skills"),
         })
     }
 

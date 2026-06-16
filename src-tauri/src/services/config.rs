@@ -88,6 +88,7 @@ impl ConfigService {
         Self::sync_current_provider_for_app(config, &AppType::Claude)?;
         Self::sync_current_provider_for_app(config, &AppType::Codex)?;
         Self::sync_current_provider_for_app(config, &AppType::Gemini)?;
+        Self::sync_current_provider_for_app(config, &AppType::PiAgent)?;
         Ok(())
     }
 
@@ -136,6 +137,7 @@ impl ConfigService {
             AppType::Hermes => {
                 // Hermes uses additive mode, no live sync needed
             }
+            AppType::PiAgent => Self::sync_pi_agent_live(config, &current_id, &provider)?,
         }
 
         Ok(())
@@ -226,6 +228,21 @@ impl ConfigService {
             }
         }
 
+        Ok(())
+    }
+
+    fn sync_pi_agent_live(
+        config: &mut MultiAppConfig,
+        provider_id: &str,
+        provider: &Provider,
+    ) -> Result<(), AppError> {
+        crate::pi_config::write_pi_agent_live(&provider.settings_config)?;
+        let live_after = crate::pi_config::read_pi_agent_live_settings()?;
+        if let Some(manager) = config.get_manager_mut(&AppType::PiAgent) {
+            if let Some(target) = manager.providers.get_mut(provider_id) {
+                target.settings_config = live_after;
+            }
+        }
         Ok(())
     }
 

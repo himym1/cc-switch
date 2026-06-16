@@ -790,7 +790,7 @@
     "officialWebsite": "公式サイト",
     "github": "GitHub",
     "manualInstallCommands": "手動インストールコマンド",
-    "oneClickInstallHint": "Claude Code / Codex / Gemini CLI / OpenCode / OpenClaw / Hermes をインストールまたは更新",
+    "oneClickInstallHint": "Claude Code / Codex / Gemini CLI / OpenCode / OpenClaw / Hermes / Pi Agent をインストールまたは更新",
     "localEnvCheck": "ローカル環境チェック",
     "updateAllTools": "すべて更新（{{count}}）",
     "currentVersion": "現在のバージョン",
@@ -868,7 +868,10 @@
       "defaultCostMultiplierRequired": "デフォルト倍率は必須です",
       "defaultCostMultiplierInvalid": "デフォルト倍率の形式が正しくありません"
     },
-    "saveFailedGeneric": "保存に失敗しました。もう一度お試しください"
+    "saveFailedGeneric": "保存に失敗しました。もう一度お試しください",
+    "piAgentConfigDir": "Pi Agent 設定ディレクトリ",
+    "piAgentConfigDirDescription": "Pi Coding Agent の設定ディレクトリ（models.json と settings.json）を上書きします。",
+    "browsePlaceholderPiAgent": "例: /home/<your-username>/.pi/agent"
   },
   "apps": {
     "claude": "Claude",
@@ -879,7 +882,9 @@
     "gemini": "Gemini",
     "opencode": "OpenCode",
     "openclaw": "OpenClaw",
-    "hermes": "Hermes"
+    "hermes": "Hermes",
+    "pi-agent": "Pi Agent",
+    "piAgent": "Pi Agent"
   },
   "sessionManager": {
     "title": "セッション管理",
@@ -2849,5 +2854,15 @@
     "expiredHint": "{{tool}}コマンドを実行してログインを更新してください",
     "queryFailed": "クエリに失敗しました",
     "refresh": "更新"
+  },
+  "piAgent": {
+    "providerId": "プロバイダー ID",
+    "providerIdHint": "~/.pi/agent の models.providers と settings.defaultProvider に書き込まれます。",
+    "apiProtocol": "API プロトコル",
+    "selectProtocol": "API プロトコルを選択",
+    "baseUrl": "API エンドポイント",
+    "defaultModel": "デフォルトモデル",
+    "defaultModelHint": "Pi が一覧表示・選択できるように最初のモデル項目も更新します。",
+    "defaultModelRequired": "Pi のデフォルトモデルを入力してください"
   }
 }

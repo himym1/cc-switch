@@ -2535,6 +2535,16 @@ fn extract_env_vars_from_config(
         }
     }
 
+    if *app_type == AppType::PiAgent {
+        let (base_url, api_key) = crate::pi_config::extract_pi_agent_primary_credentials(config);
+        if !api_key.is_empty() {
+            env_vars.push(("OPENAI_API_KEY".to_string(), api_key));
+        }
+        if !base_url.is_empty() {
+            env_vars.push(("OPENAI_BASE_URL".to_string(), base_url));
+        }
+    }
+
     env_vars
 }
 

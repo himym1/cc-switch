@@ -37,6 +37,7 @@ const PromptFormModal: React.FC<PromptFormModalProps> = ({
     gemini: "GEMINI.md",
     opencode: "AGENTS.md",
     hermes: "AGENTS.md",
+    "pi-agent": "AGENTS.md",
   };
   const filename = filenameMap[appId as Exclude<AppId, "openclaw">];
   const [name, setName] = useState("");
