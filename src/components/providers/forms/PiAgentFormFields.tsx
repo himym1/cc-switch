@@ -1,6 +1,8 @@
+import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FormLabel } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -8,8 +10,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Download, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import type { ProviderCategory } from "@/types";
-import { ApiKeySection } from "./shared";
+import { ApiKeySection, ModelInputWithFetch } from "./shared";
+import {
+  fetchModelsForConfig,
+  showFetchModelsError,
+  type FetchedModel,
+} from "@/lib/api/model-fetch";
 import { PI_AGENT_API_PROTOCOLS } from "./helpers/piAgentFormUtils";
 
 interface PiAgentFormFieldsProps {
@@ -42,6 +51,36 @@ export function PiAgentFormFields({
   websiteUrl,
 }: PiAgentFormFieldsProps) {
   const { t } = useTranslation();
+  const [fetchedModels, setFetchedModels] = useState<FetchedModel[]>([]);
+  const [isFetchingModels, setIsFetchingModels] = useState(false);
+
+  const handleFetchModels = useCallback(() => {
+    if (!baseUrl || !apiKey) {
+      showFetchModelsError(null, t, {
+        hasApiKey: !!apiKey,
+        hasBaseUrl: !!baseUrl,
+      });
+      return;
+    }
+
+    setIsFetchingModels(true);
+    fetchModelsForConfig(baseUrl, apiKey)
+      .then((models) => {
+        setFetchedModels(models);
+        if (models.length === 0) {
+          toast.info(t("providerForm.fetchModelsEmpty"));
+        } else {
+          toast.success(
+            t("providerForm.fetchModelsSuccess", { count: models.length }),
+          );
+        }
+      })
+      .catch((err) => {
+        console.warn("[PiAgentModelFetch] Failed:", err);
+        showFetchModelsError(err, t);
+      })
+      .finally(() => setIsFetchingModels(false));
+  }, [baseUrl, apiKey, t]);
 
   return (
     <>
@@ -111,14 +150,33 @@ export function PiAgentFormFields({
       />
 
       <div className="space-y-2">
-        <FormLabel htmlFor="pi-default-model">
-          {t("piAgent.defaultModel", { defaultValue: "Default Model" })}
-        </FormLabel>
-        <Input
+        <div className="flex items-center justify-between">
+          <FormLabel htmlFor="pi-default-model">
+            {t("piAgent.defaultModel", { defaultValue: "Default Model" })}
+          </FormLabel>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleFetchModels}
+            disabled={isFetchingModels}
+            className="h-7 gap-1"
+          >
+            {isFetchingModels ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Download className="h-3.5 w-3.5" />
+            )}
+            {t("providerForm.fetchModels")}
+          </Button>
+        </div>
+        <ModelInputWithFetch
           id="pi-default-model"
           value={defaultModel}
-          onChange={(event) => onDefaultModelChange(event.target.value)}
+          onChange={onDefaultModelChange}
           placeholder="gpt-5.1"
+          fetchedModels={fetchedModels}
+          isLoading={isFetchingModels}
         />
         <p className="text-xs text-muted-foreground">
           {t("piAgent.defaultModelHint", {
