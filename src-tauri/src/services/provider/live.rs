@@ -1167,6 +1167,10 @@ pub fn read_live_settings(app_type: AppType) -> Result<Value, AppError> {
 /// Returns `Ok(true)` if a provider was actually imported,
 /// `Ok(false)` if skipped (providers already exist for this app).
 pub fn import_default_config(state: &AppState, app_type: AppType) -> Result<bool, AppError> {
+    if matches!(app_type, AppType::PiAgent) {
+        return import_pi_agent_providers_from_live(state).map(|count| count > 0);
+    }
+
     // Additive mode apps (OpenCode, OpenClaw) should use their dedicated
     // import_xxx_providers_from_live functions, not this generic default config import
     if app_type.is_additive_mode() {
@@ -1597,6 +1601,194 @@ pub fn import_hermes_providers_from_live(state: &AppState) -> Result<usize, AppE
 
         imported += 1;
         log::info!("Imported Hermes provider '{name}' from live config");
+    }
+
+    Ok(imported)
+}
+
+fn pi_agent_provider_display_name(id: &str, provider: &Value) -> String {
+    ["name", "displayName", "label"]
+        .into_iter()
+        .filter_map(|key| provider.get(key).and_then(Value::as_str))
+        .map(str::trim)
+        .find(|value| !value.is_empty())
+        .unwrap_or(id)
+        .to_string()
+}
+
+fn pi_agent_model_id(value: &Value) -> Option<String> {
+    value
+        .as_str()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            value
+                .get("id")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+        })
+}
+
+fn pi_agent_default_model_for_provider(
+    live_config: &Value,
+    provider_id: &str,
+    provider: &Value,
+) -> Option<String> {
+    let live_default_provider = live_config
+        .get("settings")
+        .and_then(|settings| settings.get("defaultProvider"))
+        .and_then(Value::as_str);
+
+    if live_default_provider == Some(provider_id) {
+        if let Some(default_model) = live_config
+            .get("settings")
+            .and_then(|settings| settings.get("defaultModel"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+        {
+            return Some(default_model);
+        }
+    }
+
+    provider
+        .get("models")
+        .and_then(Value::as_array)
+        .and_then(|models| models.iter().find_map(pi_agent_model_id))
+}
+
+fn build_pi_agent_provider_settings(
+    live_config: &Value,
+    provider_id: &str,
+    provider: &Value,
+) -> Value {
+    let models = live_config
+        .get("models")
+        .cloned()
+        .unwrap_or_else(|| json!({ "providers": {} }));
+    let mut settings = live_config
+        .get("settings")
+        .cloned()
+        .filter(Value::is_object)
+        .unwrap_or_else(|| json!({}));
+
+    if let Some(settings_obj) = settings.as_object_mut() {
+        settings_obj.insert(
+            "defaultProvider".to_string(),
+            Value::String(provider_id.to_string()),
+        );
+        if let Some(default_model) =
+            pi_agent_default_model_for_provider(live_config, provider_id, provider)
+        {
+            settings_obj.insert("defaultModel".to_string(), Value::String(default_model));
+        }
+    }
+
+    json!({
+        "models": models,
+        "settings": settings,
+    })
+}
+
+/// Import Pi Coding Agent providers from ~/.pi/agent/models.json into database.
+///
+/// Pi stores multiple providers under `models.providers`, while selecting the
+/// active provider with `settings.defaultProvider`. Each imported cc-switch row
+/// keeps the full Pi config snapshot so switching one row back to live preserves
+/// the complete provider catalog and only changes the selected default provider.
+pub fn import_pi_agent_providers_from_live(state: &AppState) -> Result<usize, AppError> {
+    let app_type = AppType::PiAgent;
+
+    if state
+        .proxy_service
+        .detect_takeover_in_live_config_for_app(&app_type)
+    {
+        return Err(AppError::localized(
+            "provider.import.live_taken_over",
+            "Live 配置当前处于代理接管状态（包含占位符），不能导入为供应商。请先关闭代理接管或恢复 Live 配置后重试。",
+            "The live config is currently taken over by the proxy (contains placeholders) and cannot be imported as a provider. Disable proxy takeover or restore the live config first.",
+        ));
+    }
+
+    if !crate::pi_config::live_config_exists() {
+        return Ok(0);
+    }
+
+    let live_config = crate::pi_config::read_pi_agent_live_settings()?;
+    let Some(providers) = live_config
+        .get("models")
+        .and_then(|models| models.get("providers"))
+        .and_then(Value::as_object)
+    else {
+        return Ok(0);
+    };
+
+    if providers.is_empty() {
+        return Ok(0);
+    }
+
+    let existing_ids = state.db.get_provider_ids(app_type.as_str())?;
+    let mut imported = 0;
+
+    for (id, provider_config) in providers {
+        let id = id.trim();
+        if id.is_empty() {
+            log::warn!("Skipping Pi Agent provider with empty id");
+            continue;
+        }
+        if !provider_config.is_object() {
+            log::warn!("Skipping Pi Agent provider '{id}': provider config is not an object");
+            continue;
+        }
+        if existing_ids.iter().any(|existing| existing == id) {
+            log::debug!("Pi Agent provider '{id}' already exists in database, skipping");
+            continue;
+        }
+
+        let mut provider = Provider::with_id(
+            id.to_string(),
+            pi_agent_provider_display_name(id, provider_config),
+            build_pi_agent_provider_settings(&live_config, id, provider_config),
+            None,
+        );
+        provider.category = Some("custom".to_string());
+        provider.icon = Some("pi".to_string());
+        provider.meta = Some(crate::provider::ProviderMeta {
+            live_config_managed: Some(true),
+            ..Default::default()
+        });
+
+        if let Err(e) = state.db.save_provider(app_type.as_str(), &provider) {
+            log::warn!("Failed to import Pi Agent provider '{id}': {e}");
+            continue;
+        }
+
+        imported += 1;
+        log::info!("Imported Pi Agent provider '{id}' from live config");
+    }
+
+    let live_default_provider = live_config
+        .get("settings")
+        .and_then(|settings| settings.get("defaultProvider"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+
+    if let Some(default_provider) = live_default_provider {
+        if state
+            .db
+            .get_provider_by_id(default_provider, app_type.as_str())?
+            .is_some()
+        {
+            state
+                .db
+                .set_current_provider(app_type.as_str(), default_provider)?;
+            crate::settings::set_current_provider(&app_type, Some(default_provider))?;
+        }
     }
 
     Ok(imported)

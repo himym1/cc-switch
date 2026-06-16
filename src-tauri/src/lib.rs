@@ -660,6 +660,14 @@ pub fn run() {
                 Err(e) => log::warn!("✗ Failed to import Hermes providers: {e}"),
             }
 
+            match crate::services::provider::import_pi_agent_providers_from_live(&app_state) {
+                Ok(count) if count > 0 => {
+                    log::info!("✓ Imported {count} Pi Agent provider(s) from live config");
+                }
+                Ok(_) => log::debug!("○ No new Pi Agent providers to import"),
+                Err(e) => log::warn!("✗ Failed to import Pi Agent providers: {e}"),
+            }
+
             // 2. OMO 配置导入（当数据库中无 OMO provider 时，从本地文件导入）
             {
                 let has_omo = app_state
@@ -1377,6 +1385,7 @@ pub fn run() {
             commands::sync_universal_provider,
             // OpenCode specific
             commands::import_opencode_providers_from_live,
+            commands::import_pi_agent_providers_from_live,
             commands::get_opencode_live_provider_ids,
             // OpenClaw specific
             commands::import_openclaw_providers_from_live,

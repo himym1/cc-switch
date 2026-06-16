@@ -23,7 +23,7 @@ use crate::store::AppState;
 // Re-export sub-module functions for external access
 pub use live::{
     import_default_config, import_hermes_providers_from_live, import_openclaw_providers_from_live,
-    import_opencode_providers_from_live, read_live_settings,
+    import_opencode_providers_from_live, import_pi_agent_providers_from_live, read_live_settings,
     should_import_default_config_on_startup, sync_current_to_live,
 };
 
@@ -932,6 +932,72 @@ base_url = "http://localhost:8080"
                 Some(true),
                 "providers imported from live should be treated as live-managed"
             );
+        });
+    }
+
+    #[test]
+    #[serial]
+    fn import_pi_agent_providers_from_live_splits_models_providers() {
+        with_test_home(|state, _| {
+            crate::pi_config::write_pi_agent_live_atomic(
+                &json!({
+                    "providers": {
+                        "topping-codex": {
+                            "baseUrl": "https://example.invalid/v1",
+                            "api": "openai-completions",
+                            "apiKey": "test-key",
+                            "models": [{ "id": "gpt-5.5" }]
+                        },
+                        "rightcode-claude": {
+                            "baseUrl": "https://claude.example.invalid",
+                            "api": "anthropic-messages",
+                            "apiKey": "test-key-2",
+                            "models": [{ "id": "claude-sonnet-4-6" }]
+                        }
+                    }
+                }),
+                &json!({
+                    "defaultProvider": "rightcode-claude",
+                    "defaultModel": "claude-sonnet-4-6"
+                }),
+            )
+            .expect("seed pi agent live config");
+
+            let imported = import_pi_agent_providers_from_live(state)
+                .expect("import pi agent providers from live");
+            assert_eq!(imported, 2);
+
+            let saved = state
+                .db
+                .get_provider_by_id("topping-codex", AppType::PiAgent.as_str())
+                .expect("query imported pi provider")
+                .expect("imported pi provider should exist");
+            assert_eq!(
+                saved
+                    .meta
+                    .as_ref()
+                    .and_then(|meta| meta.live_config_managed),
+                Some(true),
+                "providers imported from live should be treated as live-managed"
+            );
+            assert_eq!(
+                saved.settings_config.pointer("/settings/defaultProvider"),
+                Some(&json!("topping-codex")),
+                "each imported row selects its own provider while preserving the shared catalog"
+            );
+            assert!(
+                saved
+                    .settings_config
+                    .pointer("/models/providers/rightcode-claude")
+                    .is_some(),
+                "imported rows should preserve the full Pi provider catalog"
+            );
+
+            let current = state
+                .db
+                .get_current_provider(AppType::PiAgent.as_str())
+                .expect("read current pi provider");
+            assert_eq!(current.as_deref(), Some("rightcode-claude"));
         });
     }
 

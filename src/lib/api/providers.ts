@@ -158,6 +158,14 @@ export const providersApi = {
   },
 
   /**
+   * 从 Pi Agent live 配置导入供应商到数据库
+   * Pi Agent 将多个供应商存储在 ~/.pi/agent/models.json 的 models.providers 中
+   */
+  async importPiAgentFromLive(): Promise<number> {
+    return await invoke("import_pi_agent_providers_from_live");
+  },
+
+  /**
    * 获取 OpenCode live 配置中的供应商 ID 列表
    * 用于前端判断供应商是否已添加到 opencode.json
    */
