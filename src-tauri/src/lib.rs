@@ -667,6 +667,13 @@ pub fn run() {
                 Ok(_) => log::debug!("○ No new Pi Agent providers to import"),
                 Err(e) => log::warn!("✗ Failed to import Pi Agent providers: {e}"),
             }
+            match crate::services::provider::ProviderService::sync_current_provider_for_app(
+                &app_state,
+                crate::app_config::AppType::PiAgent,
+            ) {
+                Ok(_) => log::debug!("✓ Synced Pi Agent provider catalog to live config"),
+                Err(e) => log::warn!("✗ Failed to sync Pi Agent provider catalog to live config: {e}"),
+            }
 
             // 2. OMO 配置导入（当数据库中无 OMO provider 时，从本地文件导入）
             {

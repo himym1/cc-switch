@@ -1003,6 +1003,180 @@ base_url = "http://localhost:8080"
 
     #[test]
     #[serial]
+    fn pi_agent_live_write_merges_models_from_other_cards() {
+        with_test_home(|state, _| {
+            let current = Provider::with_id(
+                "topping-codex".to_string(),
+                "Topping Codex".to_string(),
+                json!({
+                    "models": {
+                        "providers": {
+                            "topping-codex": {
+                                "baseUrl": "https://example.invalid/v1",
+                                "api": "openai-completions",
+                                "apiKey": "test-key",
+                                "models": [{ "id": "gpt-5.5" }]
+                            }
+                        }
+                    },
+                    "settings": {
+                        "defaultProvider": "topping-codex",
+                        "defaultModel": "gpt-5.5"
+                    }
+                }),
+                None,
+            );
+            let glm_card = Provider::with_id(
+                "glm-card".to_string(),
+                "Topping Glm".to_string(),
+                json!({
+                    "models": {
+                        "providers": {
+                            "topping-codex": {
+                                "baseUrl": "https://example.invalid/v1",
+                                "api": "openai-completions",
+                                "apiKey": "test-key",
+                                "models": [{ "id": "glm-5.2" }]
+                            }
+                        }
+                    },
+                    "settings": {
+                        "defaultProvider": "topping-codex",
+                        "defaultModel": "glm-5.2"
+                    }
+                }),
+                None,
+            );
+
+            state
+                .db
+                .save_provider(AppType::PiAgent.as_str(), &current)
+                .expect("save current pi provider");
+            state
+                .db
+                .save_provider(AppType::PiAgent.as_str(), &glm_card)
+                .expect("save glm pi provider");
+            state
+                .db
+                .set_current_provider(AppType::PiAgent.as_str(), &current.id)
+                .expect("set current pi provider");
+
+            write_live_with_common_config(state.db.as_ref(), &AppType::PiAgent, &current)
+                .expect("write pi live config");
+
+            let live = crate::pi_config::read_pi_agent_live_settings()
+                .expect("read merged pi live config");
+            let models = live
+                .pointer("/models/providers/topping-codex/models")
+                .and_then(Value::as_array)
+                .expect("topping models should be present");
+            let model_ids: Vec<_> = models
+                .iter()
+                .filter_map(|model| model.get("id").and_then(Value::as_str))
+                .collect();
+            assert!(model_ids.contains(&"gpt-5.5"));
+            assert!(model_ids.contains(&"glm-5.2"));
+            assert_eq!(
+                live.pointer("/settings/defaultModel"),
+                Some(&json!("gpt-5.5")),
+                "the selected card still controls Pi's default model"
+            );
+        });
+    }
+
+    #[test]
+    #[serial]
+    fn pi_agent_non_current_update_refreshes_live_catalog() {
+        with_test_home(|state, _| {
+            let current = Provider::with_id(
+                "topping-codex".to_string(),
+                "Topping Codex".to_string(),
+                json!({
+                    "models": {
+                        "providers": {
+                            "topping-codex": {
+                                "baseUrl": "https://example.invalid/v1",
+                                "api": "openai-completions",
+                                "apiKey": "test-key",
+                                "models": [{ "id": "gpt-5.5" }]
+                            }
+                        }
+                    },
+                    "settings": {
+                        "defaultProvider": "topping-codex",
+                        "defaultModel": "gpt-5.5"
+                    }
+                }),
+                None,
+            );
+            let old_glm_card = Provider::with_id(
+                "glm-card".to_string(),
+                "Topping Glm".to_string(),
+                json!({
+                    "models": { "providers": {} },
+                    "settings": {
+                        "defaultProvider": "topping-codex",
+                        "defaultModel": "glm-5.2"
+                    }
+                }),
+                None,
+            );
+            let updated_glm_card = Provider::with_id(
+                "glm-card".to_string(),
+                "Topping Glm".to_string(),
+                json!({
+                    "models": {
+                        "providers": {
+                            "topping-codex": {
+                                "baseUrl": "https://example.invalid/v1",
+                                "api": "openai-completions",
+                                "apiKey": "test-key",
+                                "models": [{ "id": "glm-5.2" }]
+                            }
+                        }
+                    },
+                    "settings": {
+                        "defaultProvider": "topping-codex",
+                        "defaultModel": "glm-5.2"
+                    }
+                }),
+                None,
+            );
+
+            state
+                .db
+                .save_provider(AppType::PiAgent.as_str(), &current)
+                .expect("save current pi provider");
+            state
+                .db
+                .save_provider(AppType::PiAgent.as_str(), &old_glm_card)
+                .expect("save old glm pi provider");
+            state
+                .db
+                .set_current_provider(AppType::PiAgent.as_str(), &current.id)
+                .expect("set current pi provider");
+            write_live_with_common_config(state.db.as_ref(), &AppType::PiAgent, &current)
+                .expect("seed pi live config");
+
+            ProviderService::update(state, AppType::PiAgent, None, updated_glm_card)
+                .expect("update non-current pi provider");
+
+            let live = crate::pi_config::read_pi_agent_live_settings()
+                .expect("read refreshed pi live config");
+            let model_ids: Vec<_> = live
+                .pointer("/models/providers/topping-codex/models")
+                .and_then(Value::as_array)
+                .expect("topping models should be present")
+                .iter()
+                .filter_map(|model| model.get("id").and_then(Value::as_str))
+                .collect();
+            assert!(model_ids.contains(&"gpt-5.5"));
+            assert!(model_ids.contains(&"glm-5.2"));
+        });
+    }
+
+    #[test]
+    #[serial]
     fn legacy_additive_provider_still_errors_on_live_config_parse_failure() {
         with_test_home(|state, home| {
             let provider = openclaw_provider("legacy-provider");
@@ -1261,6 +1435,26 @@ impl ProviderService {
             .live_config_managed = Some(managed);
     }
 
+    fn sync_pi_agent_current_catalog(state: &AppState, app_type: &AppType) -> Result<(), AppError> {
+        if !matches!(app_type, AppType::PiAgent) {
+            return Ok(());
+        }
+
+        let Some(current_id) =
+            crate::settings::get_effective_current_provider(&state.db, app_type)?
+        else {
+            return Ok(());
+        };
+        let Some(current_provider) = state
+            .db
+            .get_provider_by_id(&current_id, app_type.as_str())?
+        else {
+            return Ok(());
+        };
+
+        write_live_with_common_config(state.db.as_ref(), app_type, &current_provider)
+    }
+
     /// List all providers for an app type
     pub fn list(
         state: &AppState,
@@ -1329,6 +1523,8 @@ impl ProviderService {
                 .db
                 .set_current_provider(app_type.as_str(), &provider.id)?;
             write_live_with_common_config(state.db.as_ref(), &app_type, &provider)?;
+        } else {
+            Self::sync_pi_agent_current_catalog(state, &app_type)?;
         }
 
         Ok(true)
@@ -1534,6 +1730,8 @@ impl ProviderService {
                 // Sync MCP
                 McpService::sync_all_enabled(state)?;
             }
+        } else {
+            Self::sync_pi_agent_current_catalog(state, &app_type)?;
         }
 
         Ok(true)
@@ -1602,7 +1800,8 @@ impl ProviderService {
             ));
         }
 
-        state.db.delete_provider(app_type.as_str(), id)
+        state.db.delete_provider(app_type.as_str(), id)?;
+        Self::sync_pi_agent_current_catalog(state, &app_type)
     }
 
     /// Remove provider from live config only (for additive mode apps like OpenCode, OpenClaw)

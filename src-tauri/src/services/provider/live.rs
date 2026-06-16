@@ -524,6 +524,127 @@ pub(crate) fn build_effective_settings_with_common_config(
     Ok(effective_settings)
 }
 
+fn pi_agent_model_id(value: &Value) -> Option<String> {
+    value
+        .as_str()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            value
+                .get("id")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+        })
+}
+
+fn merge_pi_agent_provider_models(target: &mut Value, source: &Value) {
+    let Some(target_obj) = target.as_object_mut() else {
+        return;
+    };
+    let Some(source_obj) = source.as_object() else {
+        return;
+    };
+
+    for (key, value) in source_obj {
+        target_obj
+            .entry(key.clone())
+            .or_insert_with(|| value.clone());
+    }
+
+    let Some(source_models) = source_obj.get("models").and_then(Value::as_array) else {
+        return;
+    };
+    let Some(target_models) = target_obj.get_mut("models").and_then(Value::as_array_mut) else {
+        target_obj.insert("models".to_string(), Value::Array(source_models.clone()));
+        return;
+    };
+
+    for source_model in source_models {
+        let Some(source_id) = pi_agent_model_id(source_model) else {
+            continue;
+        };
+        let exists = target_models
+            .iter()
+            .filter_map(pi_agent_model_id)
+            .any(|target_id| target_id == source_id);
+        if !exists {
+            target_models.push(source_model.clone());
+        }
+    }
+}
+
+fn merge_pi_agent_models_catalog(target: &mut Value, source: &Value) {
+    let Some(source_providers) = source
+        .get("models")
+        .and_then(|models| models.get("providers"))
+        .and_then(Value::as_object)
+    else {
+        return;
+    };
+
+    let Some(target_obj) = target.as_object_mut() else {
+        return;
+    };
+    let models_value = target_obj
+        .entry("models".to_string())
+        .or_insert_with(|| json!({ "providers": {} }));
+    if !models_value.is_object() {
+        *models_value = json!({ "providers": {} });
+    }
+    let Some(models_obj) = models_value.as_object_mut() else {
+        return;
+    };
+    let providers_value = models_obj
+        .entry("providers".to_string())
+        .or_insert_with(|| json!({}));
+    if !providers_value.is_object() {
+        *providers_value = json!({});
+    }
+    let Some(target_providers) = providers_value.as_object_mut() else {
+        return;
+    };
+
+    for (provider_id, source_provider) in source_providers {
+        match target_providers.get_mut(provider_id) {
+            Some(target_provider) => {
+                merge_pi_agent_provider_models(target_provider, source_provider)
+            }
+            None => {
+                target_providers.insert(provider_id.clone(), source_provider.clone());
+            }
+        }
+    }
+}
+
+fn build_pi_agent_live_settings_from_cards(
+    db: &Database,
+    current_provider: &Provider,
+) -> Result<Value, AppError> {
+    let mut settings = current_provider.settings_config.clone();
+
+    match crate::pi_config::read_pi_agent_live_settings() {
+        Ok(live_settings) => merge_pi_agent_models_catalog(&mut settings, &live_settings),
+        Err(err) => log::debug!(
+            "Pi Agent live catalog could not be read before merge for '{}': {err}",
+            current_provider.id
+        ),
+    }
+
+    let providers = db.get_all_providers(AppType::PiAgent.as_str())?;
+
+    for provider in providers.values() {
+        if provider.id == "default" {
+            continue;
+        }
+        merge_pi_agent_models_catalog(&mut settings, &provider.settings_config);
+    }
+
+    Ok(settings)
+}
+
 pub(crate) fn write_live_with_common_config(
     db: &Database,
     app_type: &AppType,
@@ -532,6 +653,11 @@ pub(crate) fn write_live_with_common_config(
     let mut effective_provider = provider.clone();
     effective_provider.settings_config =
         build_effective_settings_with_common_config(db, app_type, provider)?;
+
+    if matches!(app_type, AppType::PiAgent) {
+        effective_provider.settings_config =
+            build_pi_agent_live_settings_from_cards(db, &effective_provider)?;
+    }
 
     if matches!(app_type, AppType::ClaudeDesktop) {
         crate::claude_desktop_config::apply_provider(db, &effective_provider)?;
@@ -1614,22 +1740,6 @@ fn pi_agent_provider_display_name(id: &str, provider: &Value) -> String {
         .find(|value| !value.is_empty())
         .unwrap_or(id)
         .to_string()
-}
-
-fn pi_agent_model_id(value: &Value) -> Option<String> {
-    value
-        .as_str()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
-        .or_else(|| {
-            value
-                .get("id")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(str::to_string)
-        })
 }
 
 fn pi_agent_default_model_for_provider(
