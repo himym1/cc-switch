@@ -36,6 +36,8 @@ export interface PiAgentFormValues {
   apiKey: string;
   api: string;
   defaultModel: string;
+  contextWindow: string;
+  maxTokens: string;
 }
 
 const isRecord = (value: unknown): value is Record<string, any> =>
@@ -76,6 +78,63 @@ const getFirstModelId = (provider: Record<string, any>): string => {
   return "";
 };
 
+const getModel = (
+  provider: Record<string, any>,
+  modelId: string,
+): Record<string, any> => {
+  if (!Array.isArray(provider.models)) return {};
+  const selected = provider.models.find(
+    (model: unknown) => isRecord(model) && model.id === modelId,
+  );
+  return isRecord(selected) ? selected : {};
+};
+
+const getPositiveIntegerString = (value: unknown): string => {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return String(Math.trunc(value));
+  }
+  if (typeof value === "string" && /^\d+$/.test(value.trim())) {
+    return value.trim();
+  }
+  return "";
+};
+
+const findOrCreateModel = (
+  provider: Record<string, any>,
+  modelId: string,
+): Record<string, any> | null => {
+  if (!modelId) return null;
+  if (!Array.isArray(provider.models)) provider.models = [];
+
+  const existing = provider.models.find(
+    (model: unknown) => isRecord(model) && model.id === modelId,
+  );
+  if (isRecord(existing)) return existing;
+
+  const created = { id: modelId };
+  provider.models.push(created);
+  return created;
+};
+
+const applyPositiveIntegerUpdate = (
+  model: Record<string, any> | null,
+  field: "contextWindow" | "maxTokens",
+  value: string | undefined,
+) => {
+  if (!model || value === undefined) return;
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    delete model[field];
+    return;
+  }
+
+  const parsed = Number.parseInt(trimmed, 10);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    model[field] = parsed;
+  }
+};
+
 export const getPiAgentFormValues = (jsonString: string): PiAgentFormValues => {
   const config = parseJsonObject(jsonString || PI_AGENT_DEFAULT_CONFIG);
   const providerId = getProviderId(config);
@@ -84,6 +143,7 @@ export const getPiAgentFormValues = (jsonString: string): PiAgentFormValues => {
     typeof config.settings?.defaultModel === "string"
       ? config.settings.defaultModel
       : getFirstModelId(provider);
+  const model = getModel(provider, defaultModel);
 
   return {
     providerId,
@@ -91,6 +151,8 @@ export const getPiAgentFormValues = (jsonString: string): PiAgentFormValues => {
     apiKey: typeof provider.apiKey === "string" ? provider.apiKey : "",
     api: typeof provider.api === "string" ? provider.api : "openai-completions",
     defaultModel,
+    contextWindow: getPositiveIntegerString(model.contextWindow),
+    maxTokens: getPositiveIntegerString(model.maxTokens),
   };
 };
 
@@ -124,17 +186,18 @@ export const updatePiAgentConfig = (
   if (updates.apiKey !== undefined) provider.apiKey = updates.apiKey.trim();
   if (updates.api !== undefined) provider.api = updates.api;
 
-  const defaultModel = updates.defaultModel?.trim();
-  if (defaultModel !== undefined) {
+  const defaultModel =
+    updates.defaultModel?.trim() ??
+    (typeof config.settings.defaultModel === "string"
+      ? config.settings.defaultModel
+      : getFirstModelId(provider));
+  if (updates.defaultModel !== undefined) {
     config.settings.defaultModel = defaultModel;
-    if (!Array.isArray(provider.models)) provider.models = [];
-    const firstModel = provider.models[0];
-    if (isRecord(firstModel)) {
-      firstModel.id = defaultModel;
-    } else if (defaultModel) {
-      provider.models.unshift({ id: defaultModel });
-    }
   }
+
+  const model = findOrCreateModel(provider, defaultModel);
+  applyPositiveIntegerUpdate(model, "contextWindow", updates.contextWindow);
+  applyPositiveIntegerUpdate(model, "maxTokens", updates.maxTokens);
 
   config.settings.defaultProvider = providerId;
 

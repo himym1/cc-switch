@@ -32,6 +32,10 @@ interface PiAgentFormFieldsProps {
   onApiChange: (value: string) => void;
   defaultModel: string;
   onDefaultModelChange: (value: string) => void;
+  contextWindow: string;
+  onContextWindowChange: (value: string) => void;
+  maxTokens: string;
+  onMaxTokensChange: (value: string) => void;
   category?: ProviderCategory;
   websiteUrl: string;
 }
@@ -47,6 +51,10 @@ export function PiAgentFormFields({
   onApiChange,
   defaultModel,
   onDefaultModelChange,
+  contextWindow,
+  onContextWindowChange,
+  maxTokens,
+  onMaxTokensChange,
   category,
   websiteUrl,
 }: PiAgentFormFieldsProps) {
@@ -181,9 +189,42 @@ export function PiAgentFormFields({
         <p className="text-xs text-muted-foreground">
           {t("piAgent.defaultModelHint", {
             defaultValue:
-              "Also updates the first model entry so Pi can list and select it.",
+              "Also updates the current model entry so Pi can list and select it.",
           })}
         </p>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="space-y-2">
+          <FormLabel htmlFor="pi-context-window">
+            {t("piAgent.contextWindow", { defaultValue: "Context Window" })}
+          </FormLabel>
+          <Input
+            id="pi-context-window"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            value={contextWindow}
+            onChange={(event) =>
+              onContextWindowChange(event.target.value.replace(/\D/g, ""))
+            }
+            placeholder="1000000"
+          />
+        </div>
+        <div className="space-y-2">
+          <FormLabel htmlFor="pi-max-tokens">
+            {t("piAgent.maxTokens", { defaultValue: "Max Output Tokens" })}
+          </FormLabel>
+          <Input
+            id="pi-max-tokens"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            value={maxTokens}
+            onChange={(event) =>
+              onMaxTokensChange(event.target.value.replace(/\D/g, ""))
+            }
+            placeholder="131072"
+          />
+        </div>
       </div>
     </>
   );

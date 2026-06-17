@@ -2154,6 +2154,14 @@ function ProviderFormFull({
               onDefaultModelChange={(defaultModel) =>
                 handlePiAgentFieldChange({ defaultModel })
               }
+              contextWindow={piAgentValues.contextWindow}
+              onContextWindowChange={(contextWindow) =>
+                handlePiAgentFieldChange({ contextWindow })
+              }
+              maxTokens={piAgentValues.maxTokens}
+              onMaxTokensChange={(maxTokens) =>
+                handlePiAgentFieldChange({ maxTokens })
+              }
               category={category}
               websiteUrl={form.watch("websiteUrl") || ""}
             />
