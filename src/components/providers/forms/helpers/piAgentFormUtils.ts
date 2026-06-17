@@ -135,6 +135,102 @@ const applyPositiveIntegerUpdate = (
   }
 };
 
+const ensureCompat = (model: Record<string, any>): Record<string, any> => {
+  if (!isRecord(model.compat)) model.compat = {};
+  return model.compat;
+};
+
+const normalizePiAgentModelThinking = (
+  model: Record<string, any> | null,
+  api: string,
+) => {
+  if (!model || typeof model.id !== "string") return;
+
+  const modelId = model.id.toLowerCase();
+  const compat = ensureCompat(model);
+
+  if (modelId.startsWith("glm-5.2")) {
+    model.reasoning = true;
+    model.thinkingLevelMap = {
+      off: "none",
+      minimal: "none",
+      low: "high",
+      medium: "high",
+      high: "high",
+      xhigh: "max",
+    };
+    compat.thinkingFormat = "zai";
+    compat.supportsReasoningEffort = true;
+    compat.maxTokensField = "max_tokens";
+    compat.supportsLongCacheRetention = false;
+    return;
+  }
+
+  if (modelId.startsWith("glm-")) {
+    model.reasoning = true;
+    model.thinkingLevelMap = {
+      off: "none",
+      minimal: null,
+      low: null,
+      medium: null,
+      high: "high",
+      xhigh: "max",
+    };
+    compat.thinkingFormat = "zai";
+    compat.supportsReasoningEffort = false;
+    compat.maxTokensField = "max_tokens";
+    compat.supportsLongCacheRetention = false;
+    return;
+  }
+
+  if (modelId.startsWith("deepseek")) {
+    model.reasoning = true;
+    model.thinkingLevelMap = {
+      minimal: null,
+      low: null,
+      medium: null,
+      high: "high",
+      xhigh: "max",
+    };
+    compat.thinkingFormat = "deepseek";
+    compat.requiresReasoningContentOnAssistantMessages = true;
+    compat.maxTokensField = "max_tokens";
+    compat.supportsLongCacheRetention = false;
+    return;
+  }
+
+  if (modelId.startsWith("claude")) {
+    model.reasoning = true;
+    model.thinkingLevelMap = {
+      off: null,
+      minimal: null,
+      low: "low",
+      medium: "medium",
+      high: "high",
+      xhigh: "xhigh",
+    };
+    compat.forceAdaptiveThinking = true;
+    compat.supportsEagerToolInputStreaming = false;
+    compat.supportsLongCacheRetention = false;
+    return;
+  }
+
+  if (modelId.startsWith("gpt-") || modelId.startsWith("o")) {
+    model.reasoning = true;
+    model.thinkingLevelMap = {
+      off: "none",
+      minimal: null,
+      low: "low",
+      medium: "medium",
+      high: "high",
+      xhigh: "xhigh",
+    };
+    if (api === "openai-completions") {
+      compat.maxTokensField ??= "max_tokens";
+    }
+  }
+};
+
 export const getPiAgentFormValues = (jsonString: string): PiAgentFormValues => {
   const config = parseJsonObject(jsonString || PI_AGENT_DEFAULT_CONFIG);
   const providerId = getProviderId(config);
@@ -196,6 +292,7 @@ export const updatePiAgentConfig = (
   }
 
   const model = findOrCreateModel(provider, defaultModel);
+  normalizePiAgentModelThinking(model, provider.api);
   applyPositiveIntegerUpdate(model, "contextWindow", updates.contextWindow);
   applyPositiveIntegerUpdate(model, "maxTokens", updates.maxTokens);
 
