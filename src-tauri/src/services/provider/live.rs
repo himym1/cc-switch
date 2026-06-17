@@ -2,7 +2,7 @@
 //!
 //! Handles reading and writing live configuration files for Claude, Codex, and Gemini.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde_json::{json, Value};
 use toml_edit::{DocumentMut, Item, TableLike};
@@ -619,21 +619,64 @@ fn merge_pi_agent_models_catalog(target: &mut Value, source: &Value) {
     }
 }
 
+fn pi_agent_default_provider_id(config: &Value) -> Option<String> {
+    config
+        .get("settings")
+        .and_then(|settings| settings.get("defaultProvider"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn merge_pi_agent_unmanaged_live_catalog(
+    target: &mut Value,
+    live_settings: &Value,
+    managed_provider_ids: &HashSet<String>,
+) {
+    let Some(source_providers) = live_settings
+        .get("models")
+        .and_then(|models| models.get("providers"))
+        .and_then(Value::as_object)
+    else {
+        return;
+    };
+
+    let unmanaged = json!({
+        "models": {
+            "providers": source_providers
+                .iter()
+                .filter(|(id, _)| !managed_provider_ids.contains(id.as_str()))
+                .map(|(id, provider)| (id.clone(), provider.clone()))
+                .collect::<serde_json::Map<_, _>>()
+        }
+    });
+    merge_pi_agent_models_catalog(target, &unmanaged);
+}
+
 fn build_pi_agent_live_settings_from_cards(
     db: &Database,
     current_provider: &Provider,
 ) -> Result<Value, AppError> {
     let mut settings = current_provider.settings_config.clone();
+    let providers = db.get_all_providers(AppType::PiAgent.as_str())?;
+    let managed_provider_ids: HashSet<String> = providers
+        .values()
+        .filter(|provider| provider.id != "default")
+        .filter_map(|provider| pi_agent_default_provider_id(&provider.settings_config))
+        .collect();
 
     match crate::pi_config::read_pi_agent_live_settings() {
-        Ok(live_settings) => merge_pi_agent_models_catalog(&mut settings, &live_settings),
+        Ok(live_settings) => merge_pi_agent_unmanaged_live_catalog(
+            &mut settings,
+            &live_settings,
+            &managed_provider_ids,
+        ),
         Err(err) => log::debug!(
             "Pi Agent live catalog could not be read before merge for '{}': {err}",
             current_provider.id
         ),
     }
-
-    let providers = db.get_all_providers(AppType::PiAgent.as_str())?;
 
     for provider in providers.values() {
         if provider.id == "default" {

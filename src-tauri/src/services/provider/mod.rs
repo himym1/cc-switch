@@ -1032,7 +1032,7 @@ base_url = "http://localhost:8080"
                 json!({
                     "models": {
                         "providers": {
-                            "topping-codex": {
+                            "topping-glm": {
                                 "baseUrl": "https://example.invalid/v1",
                                 "api": "openai-completions",
                                 "apiKey": "test-key",
@@ -1041,7 +1041,7 @@ base_url = "http://localhost:8080"
                         }
                     },
                     "settings": {
-                        "defaultProvider": "topping-codex",
+                        "defaultProvider": "topping-glm",
                         "defaultModel": "glm-5.2"
                     }
                 }),
@@ -1066,16 +1066,23 @@ base_url = "http://localhost:8080"
 
             let live = crate::pi_config::read_pi_agent_live_settings()
                 .expect("read merged pi live config");
-            let models = live
+            let codex_model_ids: Vec<_> = live
                 .pointer("/models/providers/topping-codex/models")
                 .and_then(Value::as_array)
-                .expect("topping models should be present");
-            let model_ids: Vec<_> = models
+                .expect("topping codex models should be present")
                 .iter()
                 .filter_map(|model| model.get("id").and_then(Value::as_str))
                 .collect();
-            assert!(model_ids.contains(&"gpt-5.5"));
-            assert!(model_ids.contains(&"glm-5.2"));
+            let glm_model_ids: Vec<_> = live
+                .pointer("/models/providers/topping-glm/models")
+                .and_then(Value::as_array)
+                .expect("topping glm models should be present")
+                .iter()
+                .filter_map(|model| model.get("id").and_then(Value::as_str))
+                .collect();
+            assert!(codex_model_ids.contains(&"gpt-5.5"));
+            assert!(!codex_model_ids.contains(&"glm-5.2"));
+            assert!(glm_model_ids.contains(&"glm-5.2"));
             assert_eq!(
                 live.pointer("/settings/defaultModel"),
                 Some(&json!("gpt-5.5")),
@@ -1115,7 +1122,7 @@ base_url = "http://localhost:8080"
                 json!({
                     "models": { "providers": {} },
                     "settings": {
-                        "defaultProvider": "topping-codex",
+                        "defaultProvider": "topping-glm",
                         "defaultModel": "glm-5.2"
                     }
                 }),
@@ -1127,7 +1134,7 @@ base_url = "http://localhost:8080"
                 json!({
                     "models": {
                         "providers": {
-                            "topping-codex": {
+                            "topping-glm": {
                                 "baseUrl": "https://example.invalid/v1",
                                 "api": "openai-completions",
                                 "apiKey": "test-key",
@@ -1136,7 +1143,7 @@ base_url = "http://localhost:8080"
                         }
                     },
                     "settings": {
-                        "defaultProvider": "topping-codex",
+                        "defaultProvider": "topping-glm",
                         "defaultModel": "glm-5.2"
                     }
                 }),
@@ -1163,15 +1170,23 @@ base_url = "http://localhost:8080"
 
             let live = crate::pi_config::read_pi_agent_live_settings()
                 .expect("read refreshed pi live config");
-            let model_ids: Vec<_> = live
+            let codex_model_ids: Vec<_> = live
                 .pointer("/models/providers/topping-codex/models")
                 .and_then(Value::as_array)
-                .expect("topping models should be present")
+                .expect("topping codex models should be present")
                 .iter()
                 .filter_map(|model| model.get("id").and_then(Value::as_str))
                 .collect();
-            assert!(model_ids.contains(&"gpt-5.5"));
-            assert!(model_ids.contains(&"glm-5.2"));
+            let glm_model_ids: Vec<_> = live
+                .pointer("/models/providers/topping-glm/models")
+                .and_then(Value::as_array)
+                .expect("topping glm models should be present")
+                .iter()
+                .filter_map(|model| model.get("id").and_then(Value::as_str))
+                .collect();
+            assert!(codex_model_ids.contains(&"gpt-5.5"));
+            assert!(!codex_model_ids.contains(&"glm-5.2"));
+            assert!(glm_model_ids.contains(&"glm-5.2"));
         });
     }
 
