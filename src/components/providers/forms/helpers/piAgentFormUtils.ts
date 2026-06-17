@@ -153,9 +153,9 @@ const normalizePiAgentModelThinking = (
     model.reasoning = true;
     model.thinkingLevelMap = {
       off: "none",
-      minimal: "none",
-      low: "high",
-      medium: "high",
+      minimal: null,
+      low: null,
+      medium: null,
       high: "high",
       xhigh: "max",
     };
