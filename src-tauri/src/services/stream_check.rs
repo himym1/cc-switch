@@ -202,6 +202,7 @@ impl StreamCheckService {
             }
             AppType::OpenClaw => Self::extract_openclaw_base_url(provider),
             AppType::Hermes => Self::extract_hermes_base_url(provider),
+            AppType::PiAgent => Self::extract_pi_agent_base_url(provider),
             AppType::ClaudeDesktop => ClaudeAdapter::new()
                 .extract_base_url(provider)
                 .map_err(|e| AppError::Message(format!("Failed to extract base_url: {e}"))),
@@ -340,6 +341,43 @@ impl StreamCheckService {
                     "hermes_base_url_missing",
                     "Hermes 供应商缺少 base_url",
                     "Hermes provider is missing `base_url`",
+                )
+            })
+    }
+
+    /// Pi Agent: `{ models: { providers: { id: { baseUrl } } }, settings: { defaultProvider } }`.
+    fn extract_pi_agent_base_url(provider: &Provider) -> Result<String, AppError> {
+        let providers = provider
+            .settings_config
+            .get("models")
+            .and_then(|models| models.get("providers"))
+            .and_then(|providers| providers.as_object())
+            .ok_or_else(|| {
+                AppError::localized(
+                    "pi_agent_base_url_missing_providers",
+                    "Pi Agent 供应商缺少 models.providers 配置",
+                    "Pi Agent provider is missing `models.providers`",
+                )
+            })?;
+
+        let selected = provider
+            .settings_config
+            .get("settings")
+            .and_then(|settings| settings.get("defaultProvider"))
+            .and_then(|value| value.as_str())
+            .and_then(|id| providers.get(id))
+            .or_else(|| providers.values().next());
+
+        selected
+            .and_then(|config| config.get("baseUrl"))
+            .and_then(|value| value.as_str())
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                AppError::localized(
+                    "pi_agent_base_url_missing",
+                    "Pi Agent 供应商缺少 baseUrl",
+                    "Pi Agent provider is missing `baseUrl`",
                 )
             })
     }
@@ -561,6 +599,31 @@ mod tests {
         assert_eq!(
             StreamCheckService::extract_openclaw_base_url(&p2).unwrap(),
             "https://api.deepseek.com/v1"
+        );
+    }
+
+    #[test]
+    fn test_resolve_base_url_extracts_pi_agent_base_url() {
+        let provider = make_provider(serde_json::json!({
+            "models": {
+                "providers": {
+                    "topping-codex": {
+                        "baseUrl": "https://topapi.topping.cn/v1",
+                        "api": "openai-completions",
+                        "apiKey": "k",
+                        "models": [{ "id": "glm-5.2" }]
+                    }
+                }
+            },
+            "settings": {
+                "defaultProvider": "topping-codex",
+                "defaultModel": "glm-5.2"
+            }
+        }));
+
+        assert_eq!(
+            StreamCheckService::resolve_base_url(&AppType::PiAgent, &provider).unwrap(),
+            "https://topapi.topping.cn/v1"
         );
     }
 
