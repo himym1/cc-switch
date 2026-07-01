@@ -54,6 +54,7 @@ vi.mock("@/lib/query", () => ({
 }));
 
 const providersApiUpdateMock = vi.fn();
+const providersApiUpdateUsageScriptMock = vi.fn();
 const providersApiUpdateTrayMenuMock = vi.fn();
 const settingsApiGetMock = vi.fn();
 const settingsApiApplyMock = vi.fn();
@@ -64,6 +65,8 @@ const openclawApiSetDefaultModelMock = vi.fn();
 vi.mock("@/lib/api", () => ({
   providersApi: {
     update: (...args: unknown[]) => providersApiUpdateMock(...args),
+    updateUsageScript: (...args: unknown[]) =>
+      providersApiUpdateUsageScriptMock(...args),
     updateTrayMenu: (...args: unknown[]) =>
       providersApiUpdateTrayMenuMock(...args),
   },
@@ -112,6 +115,7 @@ beforeEach(() => {
   deleteProviderMutateAsync.mockReset();
   switchProviderMutateAsync.mockReset();
   providersApiUpdateMock.mockReset();
+  providersApiUpdateUsageScriptMock.mockReset();
   providersApiUpdateTrayMenuMock.mockReset();
   settingsApiGetMock.mockReset();
   settingsApiApplyMock.mockReset();
@@ -374,7 +378,7 @@ describe("useProviderActions", () => {
   });
 
   it("should update provider and refresh cache when saveUsageScript succeeds", async () => {
-    providersApiUpdateMock.mockResolvedValueOnce(true);
+    providersApiUpdateUsageScriptMock.mockResolvedValueOnce(true);
     const { wrapper, queryClient } = createWrapper();
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
@@ -403,16 +407,12 @@ describe("useProviderActions", () => {
       await result.current.saveUsageScript(provider, script);
     });
 
-    expect(providersApiUpdateMock).toHaveBeenCalledWith(
-      {
-        ...provider,
-        meta: {
-          ...provider.meta,
-          usage_script: script,
-        },
-      },
+    expect(providersApiUpdateUsageScriptMock).toHaveBeenCalledWith(
+      provider.id,
+      script,
       "claude",
     );
+    expect(providersApiUpdateMock).not.toHaveBeenCalled();
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ["providers", "claude"],
     });
@@ -420,7 +420,9 @@ describe("useProviderActions", () => {
   });
 
   it("should show error toast when saveUsageScript fails with error message", async () => {
-    providersApiUpdateMock.mockRejectedValueOnce(new Error("Save failed"));
+    providersApiUpdateUsageScriptMock.mockRejectedValueOnce(
+      new Error("Save failed"),
+    );
     const { wrapper } = createWrapper();
     const provider = createProvider();
     const script: UsageScript = {
@@ -442,7 +444,7 @@ describe("useProviderActions", () => {
   });
 
   it("should use default error message when saveUsageScript fails without error message", async () => {
-    providersApiUpdateMock.mockRejectedValueOnce(new Error(""));
+    providersApiUpdateUsageScriptMock.mockRejectedValueOnce(new Error(""));
     const { wrapper } = createWrapper();
     const provider = createProvider();
     const script: UsageScript = {

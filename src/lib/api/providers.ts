@@ -4,6 +4,7 @@ import type {
   Provider,
   UniversalProvider,
   UniversalProvidersMap,
+  UsageScript,
 } from "@/types";
 import type { AppId } from "./types";
 
@@ -72,6 +73,18 @@ export const providersApi = {
       provider,
       app: appId,
       originalId,
+    });
+  },
+
+  async updateUsageScript(
+    providerId: string,
+    usageScript: UsageScript,
+    appId: AppId,
+  ): Promise<boolean> {
+    return await invoke("update_provider_usage_script", {
+      providerId,
+      usageScript,
+      app: appId,
     });
   },
 

@@ -96,6 +96,48 @@ pub fn write_pi_agent_live(settings: &Value) -> Result<(), AppError> {
     write_pi_agent_live_atomic(&models, &settings_value)
 }
 
+fn merge_managed_pi_agent_settings(
+    settings_path: &PathBuf,
+    managed: &Value,
+) -> Result<Value, AppError> {
+    let mut merged = if settings_path.exists() {
+        let existing: Value = read_json_file(settings_path)?;
+        if !existing.is_object() {
+            return Err(AppError::localized(
+                "provider.pi_agent.settings_field.not_object",
+                "Pi Coding Agent settings 字段必须是 JSON 对象",
+                "Pi Coding Agent settings field must be a JSON object",
+            ));
+        }
+        existing
+    } else {
+        json!({})
+    };
+
+    let managed_obj = managed.as_object().ok_or_else(|| {
+        AppError::localized(
+            "provider.pi_agent.settings_field.not_object",
+            "Pi Coding Agent settings 字段必须是 JSON 对象",
+            "Pi Coding Agent settings field must be a JSON object",
+        )
+    })?;
+    let merged_obj = merged.as_object_mut().ok_or_else(|| {
+        AppError::localized(
+            "provider.pi_agent.settings_field.not_object",
+            "Pi Coding Agent settings 字段必须是 JSON 对象",
+            "Pi Coding Agent settings field must be a JSON object",
+        )
+    })?;
+
+    for key in ["defaultProvider", "defaultModel"] {
+        if let Some(value) = managed_obj.get(key) {
+            merged_obj.insert(key.to_string(), value.clone());
+        }
+    }
+
+    Ok(merged)
+}
+
 pub fn write_pi_agent_live_atomic(models: &Value, settings: &Value) -> Result<(), AppError> {
     if !models.is_object() {
         return Err(AppError::localized(
@@ -114,6 +156,7 @@ pub fn write_pi_agent_live_atomic(models: &Value, settings: &Value) -> Result<()
 
     let models_path = get_pi_agent_models_path();
     let settings_path = get_pi_agent_settings_path();
+    let settings_to_write = merge_managed_pi_agent_settings(&settings_path, settings)?;
 
     let old_models = if models_path.exists() {
         Some(fs::read(&models_path).map_err(|e| AppError::io(&models_path, e))?)
@@ -123,7 +166,7 @@ pub fn write_pi_agent_live_atomic(models: &Value, settings: &Value) -> Result<()
 
     write_json_file(&models_path, models)?;
 
-    if let Err(err) = write_json_file(&settings_path, settings) {
+    if let Err(err) = write_json_file(&settings_path, &settings_to_write) {
         if let Some(bytes) = old_models {
             let _ = crate::config::atomic_write(&models_path, &bytes);
         } else {

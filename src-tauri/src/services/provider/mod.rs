@@ -15,7 +15,7 @@ use serde_json::Value;
 use crate::app_config::AppType;
 use crate::database::{validate_cost_multiplier, validate_pricing_source};
 use crate::error::AppError;
-use crate::provider::{Provider, UsageResult};
+use crate::provider::{Provider, UsageResult, UsageScript};
 use crate::services::mcp::McpService;
 use crate::settings::CustomEndpoint;
 use crate::store::AppState;
@@ -1576,6 +1576,175 @@ base_url = "http://localhost:8080"
             assert!(codex_model_ids.contains(&"gpt-5.5"));
             assert!(!codex_model_ids.contains(&"glm-5.2"));
             assert!(glm_model_ids.contains(&"glm-5.2"));
+        });
+    }
+
+    #[test]
+    #[serial]
+    fn pi_agent_live_write_preserves_unmanaged_settings_fields() {
+        with_test_home(|state, _| {
+            write_json_file(
+                &crate::pi_config::get_pi_agent_models_path(),
+                &json!({ "providers": {} }),
+            )
+            .expect("seed pi live models");
+            write_json_file(
+                &crate::pi_config::get_pi_agent_settings_path(),
+                &json!({
+                    "defaultProvider": "manual-provider",
+                    "defaultModel": "manual-model",
+                    "extensions": { "keep-extension": { "enabled": true } },
+                    "packages": { "keep-package": { "enabled": true } },
+                    "theme": "user-theme",
+                    "quietStartup": true
+                }),
+            )
+            .expect("seed pi live settings");
+
+            let provider = Provider::with_id(
+                "topping-codex".to_string(),
+                "Topping Codex".to_string(),
+                json!({
+                    "models": {
+                        "providers": {
+                            "topping-codex": {
+                                "baseUrl": "https://example.invalid/v1",
+                                "api": "openai-completions",
+                                "apiKey": "test-key",
+                                "models": [{ "id": "gpt-5.5" }]
+                            }
+                        }
+                    },
+                    "settings": {
+                        "defaultProvider": "topping-codex",
+                        "defaultModel": "gpt-5.5",
+                        "extensions": { "stale-extension": { "enabled": false } },
+                        "theme": "stale-theme"
+                    }
+                }),
+                None,
+            );
+            state
+                .db
+                .save_provider(AppType::PiAgent.as_str(), &provider)
+                .expect("save pi provider");
+            state
+                .db
+                .set_current_provider(AppType::PiAgent.as_str(), &provider.id)
+                .expect("set current pi provider");
+
+            write_live_with_common_config(state.db.as_ref(), &AppType::PiAgent, &provider)
+                .expect("write pi live config");
+
+            let live =
+                crate::pi_config::read_pi_agent_live_settings().expect("read pi live settings");
+            assert_eq!(
+                live.pointer("/settings/defaultProvider"),
+                Some(&json!("topping-codex"))
+            );
+            assert_eq!(
+                live.pointer("/settings/defaultModel"),
+                Some(&json!("gpt-5.5"))
+            );
+            assert_eq!(
+                live.pointer("/settings/extensions/keep-extension/enabled"),
+                Some(&json!(true)),
+                "existing Pi extensions should not be overwritten by provider snapshots"
+            );
+            assert_eq!(
+                live.pointer("/settings/packages/keep-package/enabled"),
+                Some(&json!(true)),
+                "existing Pi packages should not be overwritten by provider snapshots"
+            );
+            assert_eq!(live.pointer("/settings/theme"), Some(&json!("user-theme")));
+            assert_eq!(live.pointer("/settings/quietStartup"), Some(&json!(true)));
+            assert!(
+                live.pointer("/settings/extensions/stale-extension")
+                    .is_none(),
+                "provider snapshots must not inject stale non-selection settings"
+            );
+        });
+    }
+
+    #[test]
+    #[serial]
+    fn pi_agent_usage_script_update_does_not_touch_live_settings() {
+        with_test_home(|state, _| {
+            let provider = Provider::with_id(
+                "pi-provider".to_string(),
+                "Pi Provider".to_string(),
+                json!({
+                    "models": {
+                        "providers": {
+                            "pi-provider": {
+                                "baseUrl": "https://example.invalid/v1",
+                                "api": "openai-completions",
+                                "apiKey": "test-key",
+                                "models": [{ "id": "model-a" }]
+                            }
+                        }
+                    },
+                    "settings": {
+                        "defaultProvider": "pi-provider",
+                        "defaultModel": "model-a"
+                    }
+                }),
+                None,
+            );
+            state
+                .db
+                .save_provider(AppType::PiAgent.as_str(), &provider)
+                .expect("save pi provider");
+            write_json_file(
+                &crate::pi_config::get_pi_agent_models_path(),
+                &json!({ "providers": {} }),
+            )
+            .expect("seed pi live models");
+            write_json_file(
+                &crate::pi_config::get_pi_agent_settings_path(),
+                &json!({
+                    "defaultProvider": "manual-provider",
+                    "defaultModel": "manual-model",
+                    "extensions": { "keep-extension": { "enabled": true } }
+                }),
+            )
+            .expect("seed pi live settings");
+
+            ProviderService::update_usage_script(
+                state,
+                AppType::PiAgent,
+                &provider.id,
+                usage_script_with_credentials(None, None, Some("balance")),
+            )
+            .expect("save usage script only");
+
+            let live =
+                crate::pi_config::read_pi_agent_live_settings().expect("read pi live settings");
+            assert_eq!(
+                live.pointer("/settings/defaultProvider"),
+                Some(&json!("manual-provider"))
+            );
+            assert_eq!(
+                live.pointer("/settings/defaultModel"),
+                Some(&json!("manual-model"))
+            );
+            assert_eq!(
+                live.pointer("/settings/extensions/keep-extension/enabled"),
+                Some(&json!(true))
+            );
+            assert!(
+                live.pointer("/models/providers/pi-provider").is_none(),
+                "saving subscription usage metadata must not sync Pi live models"
+            );
+            let saved = state
+                .db
+                .get_provider_by_id(&provider.id, AppType::PiAgent.as_str())
+                .expect("query provider")
+                .expect("provider should exist");
+            assert!(
+                saved.meta.and_then(|meta| meta.usage_script).is_some(),
+                "usage script should be stored in cc-switch DB"
+            );
         });
     }
 
@@ -3188,6 +3357,31 @@ impl ProviderService {
             }
         }
 
+        Ok(true)
+    }
+
+    pub fn update_usage_script(
+        state: &AppState,
+        app_type: AppType,
+        provider_id: &str,
+        usage_script: UsageScript,
+    ) -> Result<bool, AppError> {
+        validate_usage_script(&usage_script)?;
+        let mut provider = state
+            .db
+            .get_provider_by_id(provider_id, app_type.as_str())?
+            .ok_or_else(|| {
+                AppError::Message(format!(
+                    "Provider '{}' does not exist in app '{}'",
+                    provider_id,
+                    app_type.as_str()
+                ))
+            })?;
+        provider
+            .meta
+            .get_or_insert_with(Default::default)
+            .usage_script = Some(usage_script);
+        state.db.save_provider(app_type.as_str(), &provider)?;
         Ok(true)
     }
 

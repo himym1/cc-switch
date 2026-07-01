@@ -295,15 +295,7 @@ export function useProviderActions(
   const saveUsageScript = useCallback(
     async (provider: Provider, script: UsageScript) => {
       try {
-        const updatedProvider: Provider = {
-          ...provider,
-          meta: {
-            ...provider.meta,
-            usage_script: script,
-          },
-        };
-
-        await providersApi.update(updatedProvider, activeApp);
+        await providersApi.updateUsageScript(provider.id, script, activeApp);
         await queryClient.invalidateQueries({
           queryKey: ["providers", activeApp],
         });
