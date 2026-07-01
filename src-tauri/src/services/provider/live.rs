@@ -619,6 +619,23 @@ fn merge_pi_agent_models_catalog(target: &mut Value, source: &Value) {
     }
 }
 
+fn align_pi_agent_provider_display_name(settings: &mut Value, provider: &Provider) {
+    let Some(provider_id) = pi_agent_default_provider_id(&provider.settings_config) else {
+        return;
+    };
+    let name = provider.name.trim();
+    if name.is_empty() {
+        return;
+    }
+    let Some(provider_config) = settings
+        .pointer_mut(&format!("/models/providers/{provider_id}"))
+        .and_then(Value::as_object_mut)
+    else {
+        return;
+    };
+    provider_config.insert("name".to_string(), Value::String(name.to_string()));
+}
+
 fn pi_agent_default_provider_id(config: &Value) -> Option<String> {
     config
         .get("settings")
@@ -683,6 +700,7 @@ fn build_pi_agent_live_settings_from_cards(
             continue;
         }
         merge_pi_agent_models_catalog(&mut settings, &provider.settings_config);
+        align_pi_agent_provider_display_name(&mut settings, provider);
     }
 
     Ok(settings)
@@ -1905,14 +1923,28 @@ pub fn import_pi_agent_providers_from_live(state: &AppState) -> Result<usize, Ap
             log::warn!("Skipping Pi Agent provider '{id}': provider config is not an object");
             continue;
         }
+        let display_name = pi_agent_provider_display_name(id, provider_config);
         if existing_ids.iter().any(|existing| existing == id) {
+            if let Some(mut existing_provider) =
+                state.db.get_provider_by_id(id, app_type.as_str())?
+            {
+                if existing_provider.name != display_name {
+                    existing_provider.name = display_name;
+                    if let Err(e) = state
+                        .db
+                        .save_provider(app_type.as_str(), &existing_provider)
+                    {
+                        log::warn!("Failed to refresh Pi Agent provider '{id}' display name: {e}");
+                    }
+                }
+            }
             log::debug!("Pi Agent provider '{id}' already exists in database, skipping");
             continue;
         }
 
         let mut provider = Provider::with_id(
             id.to_string(),
-            pi_agent_provider_display_name(id, provider_config),
+            display_name,
             build_pi_agent_provider_settings(&live_config, id, provider_config),
             None,
         );

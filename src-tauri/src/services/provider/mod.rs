@@ -1581,6 +1581,147 @@ base_url = "http://localhost:8080"
 
     #[test]
     #[serial]
+    fn pi_agent_import_refreshes_existing_provider_display_name() {
+        with_test_home(|state, _| {
+            crate::pi_config::write_pi_agent_live_atomic(
+                &json!({
+                    "providers": {
+                        "opencodezen": {
+                            "name": "OpenCode Zen",
+                            "baseUrl": "https://example.invalid/zen/v1",
+                            "api": "openai-completions",
+                            "apiKey": "test-key",
+                            "models": [{ "id": "zen-model" }]
+                        }
+                    }
+                }),
+                &json!({
+                    "defaultProvider": "opencodezen",
+                    "defaultModel": "zen-model"
+                }),
+            )
+            .expect("seed pi agent live config");
+            let stale = Provider::with_id(
+                "opencodezen".to_string(),
+                "OpenCode Go".to_string(),
+                json!({
+                    "models": {
+                        "providers": {
+                            "opencodezen": {
+                                "name": "OpenCode Go",
+                                "baseUrl": "https://example.invalid/zen/v1",
+                                "api": "openai-completions",
+                                "apiKey": "test-key",
+                                "models": [{ "id": "zen-model" }]
+                            }
+                        }
+                    },
+                    "settings": {
+                        "defaultProvider": "opencodezen",
+                        "defaultModel": "zen-model"
+                    }
+                }),
+                None,
+            );
+            state
+                .db
+                .save_provider(AppType::PiAgent.as_str(), &stale)
+                .expect("save stale pi provider");
+
+            let imported = import_pi_agent_providers_from_live(state)
+                .expect("import pi agent providers from live");
+            assert_eq!(
+                imported, 0,
+                "existing provider ids should not be re-imported"
+            );
+            let refreshed = state
+                .db
+                .get_provider_by_id("opencodezen", AppType::PiAgent.as_str())
+                .expect("query provider")
+                .expect("provider should exist");
+            assert_eq!(refreshed.name, "OpenCode Zen");
+        });
+    }
+
+    #[test]
+    #[serial]
+    fn pi_agent_live_write_aligns_provider_name_with_card_name() {
+        with_test_home(|state, _| {
+            let current = Provider::with_id(
+                "topping-codex".to_string(),
+                "Topping Codex".to_string(),
+                json!({
+                    "models": {
+                        "providers": {
+                            "topping-codex": {
+                                "name": "Topping Codex",
+                                "baseUrl": "https://example.invalid/v1",
+                                "api": "openai-completions",
+                                "apiKey": "test-key",
+                                "models": [{ "id": "gpt-5.5" }]
+                            }
+                        }
+                    },
+                    "settings": {
+                        "defaultProvider": "topping-codex",
+                        "defaultModel": "gpt-5.5"
+                    }
+                }),
+                None,
+            );
+            let zen_card = Provider::with_id(
+                "opencodezen".to_string(),
+                "OpenCode Zen".to_string(),
+                json!({
+                    "models": {
+                        "providers": {
+                            "opencodezen": {
+                                "name": "OpenCode Go",
+                                "baseUrl": "https://example.invalid/zen/v1",
+                                "api": "openai-completions",
+                                "apiKey": "test-key",
+                                "models": [{ "id": "zen-model" }]
+                            }
+                        }
+                    },
+                    "settings": {
+                        "defaultProvider": "opencodezen",
+                        "defaultModel": "zen-model"
+                    }
+                }),
+                None,
+            );
+            state
+                .db
+                .save_provider(AppType::PiAgent.as_str(), &current)
+                .expect("save current pi provider");
+            state
+                .db
+                .save_provider(AppType::PiAgent.as_str(), &zen_card)
+                .expect("save zen pi provider");
+            state
+                .db
+                .set_current_provider(AppType::PiAgent.as_str(), &current.id)
+                .expect("set current pi provider");
+
+            write_live_with_common_config(state.db.as_ref(), &AppType::PiAgent, &current)
+                .expect("write pi live config");
+
+            let live =
+                crate::pi_config::read_pi_agent_live_settings().expect("read pi live settings");
+            assert_eq!(
+                live.pointer("/models/providers/opencodezen/name"),
+                Some(&json!("OpenCode Zen"))
+            );
+            assert_eq!(
+                live.pointer("/models/providers/topping-codex/name"),
+                Some(&json!("Topping Codex"))
+            );
+        });
+    }
+
+    #[test]
+    #[serial]
     fn pi_agent_live_write_preserves_unmanaged_settings_fields() {
         with_test_home(|state, _| {
             write_json_file(
